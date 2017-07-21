@@ -11,8 +11,7 @@ import os
 # TODO: Hook to the again/hard/good/easy selection part
 # TODO: Record again/hard/good/easy as part of the filename
 
-recorder = Recorder()
-is_recording = False
+recorder = None
 
 def get_configuration(did, key, default):
     configuration = mw.col.decks.confForDid(did)
@@ -39,22 +38,25 @@ def should_record_audio():
     return get_record_audio(did)
 
 # Start recording when a question is shown
-def onShowQuestion():
+def on_show_question():
+    global recorder
     if not should_record_audio():
         return
 
+    recorder = Recorder()
     recorder.start()
-    is_recording = True
 
 # Stop recording when the answer is shown
-def onShowAnswer():
+def on_show_answer():
+    global recorder
+
     if not should_record_audio():
         return
 
-    is_recording = False
     recorder.stop()
     recorder.postprocess(True)
     recorded_file = recorder.file()
+    recorder = None
     filename = datetime.datetime.now().strftime('%Y-%m-%d %H-%M-%S') + '.mp3'
 
     card = mw.reviewer.card.__dict__
@@ -68,19 +70,22 @@ def onShowAnswer():
     os.rename(recorded_file, os.path.join(recording_directory, filename))
 
 # Make sure to stop the recorder is we leave the reviewer
-def onReviewCleanup():
-    if is_recording:
+def cleanup_recorder():
+    global recorder
+
+    if recorder:
         recorder.stop()
+        recorder = None
 
-def test():
-    print(target_directory)
-
-addHook('showQuestion', onShowQuestion)
-addHook('showAnswer', onShowAnswer)
-addHook('reviewCleanup', onReviewCleanup)
+addHook('showQuestion', on_show_question)
+addHook('showAnswer', on_show_answer)
+# If the user leaves through going back to the main page
+addHook('reviewCleanup', cleanup_recorder)
+# If the user leaves through closing the app
+addHook('unloadProfile', cleanup_recorder)
 
 # Add a new tab to the deck option window to configure the addon
-def addTabToDeckOptions(self):
+def add_tab_to_deck_options(self):
     if not hasattr(self, 'addons'):
         self.addons = {}
 
@@ -109,12 +114,12 @@ def addTabToDeckOptions(self):
     self.form.tabWidget.addTab(tab, 'Anki Recorder')
 
 # Update the tab content when a new configuration is loaded
-def updateConfigurationTab(self):
+def update_configuration_tab(self):
     self.addons['anki_recorder']['record_audio'].setChecked(get_record_audio(self.deck['id']))
     self.addons['anki_recorder']['directory'].setText(get_target_directory(self.deck['id']))
 
 # Update deck configuration
-def saveConfiguration(self):
+def save_configuration(self):
     self.conf.setdefault('addons', {}).setdefault('anki_recorder', {})
 
     form = self.addons['anki_recorder']
@@ -123,6 +128,6 @@ def saveConfiguration(self):
     anki_recorder_configuration['record_audio'] = form['record_audio'].isChecked()
     anki_recorder_configuration['directory'] = form['directory'].text()
 
-DeckConf.setupConfs = wrap(DeckConf.setupConfs, addTabToDeckOptions, 'before')
-DeckConf.loadConf = wrap(DeckConf.loadConf, updateConfigurationTab)
-DeckConf.saveConf = wrap(DeckConf.saveConf, saveConfiguration, 'before')
+DeckConf.setupConfs = wrap(DeckConf.setupConfs, add_tab_to_deck_options, 'before')
+DeckConf.loadConf = wrap(DeckConf.loadConf, update_configuration_tab)
+DeckConf.saveConf = wrap(DeckConf.saveConf, save_configuration, 'before')
