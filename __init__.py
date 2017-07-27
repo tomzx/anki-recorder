@@ -1,4 +1,5 @@
 from aqt import mw
+from aqt.reviewer import Reviewer
 from aqt.deckconf import DeckConf
 from anki.hooks import addHook, wrap
 from anki.sound import Recorder
@@ -12,6 +13,12 @@ import os
 # TODO: Record again/hard/good/easy as part of the filename
 
 recorder = None
+filename = None
+recording_directory = None
+
+def log(message):
+    with open('anki_recorder.log', 'a') as file:
+        file.write(message + '\n')
 
 def get_configuration(did, key, default):
     configuration = mw.col.decks.confForDid(did)
@@ -40,19 +47,28 @@ def should_record_audio():
 # Start recording when a question is shown
 def on_show_question():
     global recorder
+    global filename
+    global recording_directory
+
     if not should_record_audio():
         return
 
     recorder = Recorder()
     recorder.start()
+    log('[on_show_question][{}] Start recording'.format(recorder.thread.ident))
+    filename = None
+    recording_directory = None
 
 # Stop recording when the answer is shown
 def on_show_answer():
     global recorder
+    global filename
+    global recording_directory
 
     if not should_record_audio():
         return
 
+    log('[on_show_answer][{}] Stop recording'.format(recorder.thread.ident))
     recorder.stop()
     recorder.postprocess(True)
     recorded_file = recorder.file()
@@ -74,6 +90,7 @@ def cleanup_recorder():
     global recorder
 
     if recorder:
+        log('[cleanup_recorder][{}] Stop recording'.format(recorder.thread.ident))
         recorder.stop()
         recorder = None
 
@@ -131,3 +148,14 @@ def save_configuration(self):
 DeckConf.setupConfs = wrap(DeckConf.setupConfs, add_tab_to_deck_options, 'before')
 DeckConf.loadConf = wrap(DeckConf.loadConf, update_configuration_tab)
 DeckConf.saveConf = wrap(DeckConf.saveConf, save_configuration, 'before')
+
+# Append the ease to the filename
+def on_answer_card(self, ease):
+    if not filename:
+        return
+
+    recorded_file = os.path.join(recording_directory, filename)
+    new_filename = os.path.splitext(filename)[0] + ' ' + str(ease) + '.mp3'
+    os.rename(recorded_file, os.path.join(recording_directory, new_filename))
+
+Reviewer._answerCard = wrap(Reviewer._answerCard, on_answer_card, 'before')
