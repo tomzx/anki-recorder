@@ -17,8 +17,9 @@ filename = None
 recording_directory = None
 
 def log(message):
+    now = datetime.datetime.now().strftime('%Y-%m-%d %H-%M-%S.%f')
     with open('anki_recorder.log', 'a') as file:
-        file.write(message + '\n')
+        file.write('[' + now + ']' + message + '\n')
 
 def get_configuration(did, key, default):
     configuration = mw.col.decks.confForDid(did)
@@ -50,14 +51,15 @@ def on_show_question():
     global filename
     global recording_directory
 
+    filename = None
+    recording_directory = None
+
     if not should_record_audio():
         return
 
     recorder = Recorder()
     recorder.start()
     log('[on_show_question][{}] Start recording'.format(recorder.thread.ident))
-    filename = None
-    recording_directory = None
 
 # Stop recording when the answer is shown
 def on_show_answer():
