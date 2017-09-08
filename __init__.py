@@ -9,17 +9,23 @@ from PyQt4 import QtCore, QtGui
 import datetime
 import os
 
-# TODO: Hook to the again/hard/good/easy selection part
-# TODO: Record again/hard/good/easy as part of the filename
+# TODO: Add support for ctrl+z?
 
 recorder = None
 filename = None
 recording_directory = None
 
 def log(message):
+    is_debug = False
+
+    if not is_debug:
+        return
+
     now = datetime.datetime.now().strftime('%Y-%m-%d %H-%M-%S.%f')
+    card = mw.reviewer.card.__dict__
+    cid = str(card['id'])
     with open('anki_recorder.log', 'a') as file:
-        file.write('[' + now + ']' + message + '\n')
+        file.write('[' + now + '][cid=' + cid + ']' + message + '\n')
 
 def get_configuration(did, key, default):
     configuration = mw.col.decks.confForDid(did)
@@ -54,6 +60,11 @@ def on_show_question():
     filename = None
     recording_directory = None
 
+    if recorder:
+        log('[on_show_question][{}] Stop recording'.format(recorder.thread.ident))
+        recorder.stop()
+        recorder = None
+
     if not should_record_audio():
         return
 
@@ -81,11 +92,17 @@ def on_show_answer():
     did = str(card['did'])
     cid = str(card['id'])
 
+    if not os.path.exists(recorded_file):
+        log('[on_show_answer] Could not find recorded file {}'.format(recorded_file))
+
     recording_directory = os.path.join(get_target_directory(did), did, cid)
     if not os.path.exists(recording_directory):
         os.makedirs(recording_directory)
 
-    os.rename(recorded_file, os.path.join(recording_directory, filename))
+    old_path = recorded_file
+    new_path = os.path.join(recording_directory, filename)
+    log('[on_show_answer] Renaming file {} to {}'.format(old_path, new_path))
+    os.rename(old_path, new_path)
 
 # Make sure to stop the recorder is we leave the reviewer
 def cleanup_recorder():
@@ -153,6 +170,15 @@ DeckConf.saveConf = wrap(DeckConf.saveConf, save_configuration, 'before')
 
 # Append the ease to the filename
 def on_answer_card(self, ease):
+    # Taken from Reviewer._answerCard
+    if self.mw.state != "review":
+        # showing resetRequired screen; ignore key
+        return
+    if self.state != "answer":
+        return
+    if self.mw.col.sched.answerButtons(self.card) < ease:
+        return
+
     if not filename:
         return
 
